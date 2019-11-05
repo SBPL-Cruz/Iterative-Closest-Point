@@ -18,8 +18,10 @@ Pointcloud::Pointcloud(string filename) {
         string line;
         utilityCore::safeGetline(fp_in, line);
         if (!line.empty()) {
+            // cout << line << endl;
             vector<string> tokens = utilityCore::tokenizeString(line);
-			glm::vec4 pt(atoi(tokens[2].c_str()), atoi(tokens[0].c_str()), atoi(tokens[1].c_str()), i++);
+			glm::vec4 pt(stof(tokens[2].c_str()), stof(tokens[0].c_str()), stof(tokens[1].c_str()), i++);
+            // cout << glm::to_string(pt) << endl;
 			points.push_back(pt);
         }
     }

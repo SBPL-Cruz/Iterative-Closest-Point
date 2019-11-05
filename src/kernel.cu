@@ -18,7 +18,7 @@
 
 // Controls for ICP implementation
 #define KD_TREE_SEARCH 1
-#define INITIAL_ROT 1
+#define INITIAL_ROT 0
 
 
 // LOOK-2.1 potentially useful for doing grid-based neighbor search
@@ -64,7 +64,8 @@ void checkCUDAError(const char *msg, int line = -1) {
 #define sharedMemorySize 65536
 
 /*! Size of the starting area in simulation space. */
-#define scene_scale 50.0f
+// #define scene_scale 50.0f
+#define scene_scale 1.0f
 
 
 /***********************************************
@@ -184,7 +185,7 @@ void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4>	ta
 
 #if INITIAL_ROT
 	//add rotation and translation to target for test;
-	glm::vec3 t(80, -22, 100);
+	glm::vec3 t(20, -22, 20);
 	glm::vec3 r(-.5, .6, .8);
 	glm::vec3 s(1, 1, 1);
 	glm::mat4 initial_rot = utilityCore::buildTransformationMatrix(t, r, s);
@@ -456,6 +457,17 @@ void ICP::stepCPU() {
 /**
 * Step the ICP algorithm.
 */
+bool ICP::iterateGPU() {
+	int max_iter = 10;
+	int iter = 0;
+	while (iter < max_iter)
+	{
+		printf("Iteration:%d\n", iter);
+		stepGPU();
+		iter++;
+	}
+	return true;
+}
 void ICP::stepGPU() {
 	dim3 fullBlocksPerGrid((sizeTarget + blockSize - 1) / blockSize);
 	// find the closest point in the scene for each point in the target
@@ -533,6 +545,17 @@ void ICP::stepGPU() {
 	glm::mat4 transform = glm::translate(glm::mat4(), t) * glm::mat4(R);
 	transformPoint << <fullBlocksPerGrid, blockSize >> >(sizeTarget, &dev_pos[sizeScene], transform);
 
+	// std::cout << glm::to_string(transform) << std::endl;
+	// int i,j;
+	// for (j=0; j<4; j++){
+	//   	for (i=0; i<4; i++){
+	//  		printf("%f ",transform[i][j]);
+	// 	}
+	// 	printf("\n");
+	// }
+	// printf("\n");
+	// printf("\n");
+	
 	cudaFree(dev_cor);
 	cudaFree(tar_c);
 	cudaFree(cor_c);

@@ -208,11 +208,11 @@ void initShaders(GLuint * program) {
 //====================================
 // Main loop
 //====================================
-void runCUDA() {
+bool runCUDA() {
 	// Map OpenGL buffer object for writing from CUDA on a single GPU
 	// No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not
 	// use this buffer
-
+	bool icp_done = false;
 	float4 *dptr = NULL;
 	float *dptrVertPositions = NULL;
 	float *dptrVertVelocities = NULL;
@@ -221,11 +221,12 @@ void runCUDA() {
 	cudaGLMapBufferObject((void**)&dptrVertVelocities, boidVBO_velocities);
 
 	// execute the kernel
-	#if GPU_ENABLED
-	ICP::stepGPU();
-	#else
-	ICP::stepCPU();
-	#endif
+	// #if GPU_ENABLED
+	// ICP::stepGPU();
+	icp_done = ICP::iterateGPU();
+	// #else
+	// ICP::stepCPU();
+	// #endif
 
 
 	#if VISUALIZE
@@ -235,6 +236,8 @@ void runCUDA() {
 	// unmap buffer object
 	cudaGLUnmapBufferObject(boidVBO_positions);
 	cudaGLUnmapBufferObject(boidVBO_velocities);
+
+	return icp_done;
 }
 
 void mainLoop() {
@@ -245,8 +248,10 @@ void mainLoop() {
 	float avgFrame = 0.0f;
 	int totalFrames = 0;
 	double timebase2 = 0;
+	bool icp_done = false;
 	
 	while (!glfwWindowShouldClose(window)) {
+	// while (!icp_done) {
 		glfwPollEvents();
 
 		frame++;
@@ -267,8 +272,8 @@ void mainLoop() {
 				frame = 0;
 		}
 
-
-		runCUDA();
+		if (!icp_done)
+			icp_done = runCUDA();
 
 		std::ostringstream ss;
 		ss << "[";

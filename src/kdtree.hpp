@@ -10,6 +10,7 @@
 
 #include <glm/vec4.hpp>
 #include <vector>
+#include <chrono>
 
 namespace KDTree
 {

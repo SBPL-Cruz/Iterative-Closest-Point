@@ -8,6 +8,7 @@
 #include <cuda.h>
 #include <cmath>
 #include <vector>
+#include <iostream>
 
 namespace ICP {
 	void initSimulation(std::vector<glm::vec4> scene, std::vector<glm::vec4> target);
@@ -21,4 +22,6 @@ namespace ICP {
 	void copyPointsToVBO(float *vbodptr_positions, float *vbodptr_velocities);
 
     void unitTest();
+
+    bool iterateGPU();
 }
