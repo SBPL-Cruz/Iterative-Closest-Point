@@ -75,7 +75,27 @@ set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11 -O3 --default-stream per-thre
 #    set(CUDA_PROPAGATE_HOST_FLAGS OFF)
 #endif()
 
-add_subdirectory(src)
+#add_subdirectory(src)
+
+set(SOURCE_FILES
+    "src/cudaMat4.hpp"
+    "src/glslUtility.hpp"
+    "src/glslUtility.cpp"
+    "src/utilityCore.hpp"
+    "src/utilityCore.cpp"
+    "src/kernel.h"
+    "src/kernel.cu"
+    "src/pointcloud.h"
+    "src/pointcloud.cpp"
+    "src/svd3.h"
+    "src/kdtree.cpp"
+    "src/kdtree.hpp"
+    )
+
+cuda_add_library(src
+    ${SOURCE_FILES}
+    OPTIONS -arch=sm_50
+    )
 
 cuda_add_executable(${CMAKE_PROJECT_NAME}
     "src/main.hpp"
