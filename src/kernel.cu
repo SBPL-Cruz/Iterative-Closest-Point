@@ -11,34 +11,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include "utilityCore.hpp"
 #include "svd3.h"
-#include "kdtree.hpp"
 #include "kernel.h"
 #include "device_launch_parameters.h"
 
 
-// Controls for ICP implementation
-#define KD_TREE_SEARCH 1
-#define INITIAL_ROT 0
-
-
-// LOOK-2.1 potentially useful for doing grid-based neighbor search
-#ifndef imax
-#define imax( a, b ) ( ((a) > (b)) ? (a) : (b) )
-#endif
-
-#ifndef imin
-#define imin( a, b ) ( ((a) < (b)) ? (a) : (b) )
-#endif
-
-#ifndef clamp
-#define clamp(x, lo, hi) (x < lo) ? lo : (x > hi) ? hi : x
-#endif
-
-#ifndef wrap
-#define wrap(x, lo, hi) (x < lo) ? x + (hi - lo) : (x > hi) ? x - (hi - lo) : x
-#endif
-
-#define checkCUDAErrorWithLine(msg) checkCUDAError(msg, __LINE__)
 
 /**
 * Check for CUDA errors; print and exit if there was a problem.
@@ -55,37 +31,39 @@ void checkCUDAError(const char *msg, int line = -1) {
 }
 
 
-/*****************
-* Configuration *
-*****************/
+// /*****************
+// * Configuration *
+// *****************/
 
-/*! Block size used for CUDA kernel launch. */
-#define blockSize 256
-#define sharedMemorySize 65536
+// /*! Block size used for CUDA kernel launch. */
+// #define blockSize 256
+// #define sharedMemorySize 65536
 
-/*! Size of the starting area in simulation space. */
-// #define scene_scale 50.0f
-#define scene_scale 1.0f
+// /*! Size of the starting area in simulation space. */
+// // #define scene_scale 50.0f
+// #define scene_scale 1.0f
+
+dim3 threadsPerBlock(blockSize);
 
 
 /***********************************************
 * Kernel state (pointers are device pointers) *
 ***********************************************/
 
-int sizeTarget;
-int sizeScene;
-int numObjects;
-dim3 threadsPerBlock(blockSize);
+// int sizeTarget;
+// int sizeScene;
+// int numObjects;
+// dim3 threadsPerBlock(blockSize);
 
-glm::vec4 *dev_pos;
-glm::vec3 *dev_color;
-int *dev_dist;
-int *dev_pair;
-KDTree::Node *dev_kd;
+// glm::vec4 *dev_pos;
+// glm::vec3 *dev_color;
+// int *dev_dist;
+// int *dev_pair;
+// KDTree::Node *dev_kd;
 
-glm::vec4 *host_pos;
-int *host_dist;
-int *host_pair;
+// glm::vec4 *host_pos;
+// int *host_dist;
+// int *host_pair;
 
 /******************
 * initSimulation *
@@ -137,11 +115,14 @@ __global__ void kernResetIntBuffer(int N, int *intBuffer, int value) {
 	}
 }
 
+ICP::ICP() {}
 
 /**
 * Initialize memory, update some globals
 */
-void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4>	target) {
+void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4> target, KDTree::Node *kd) {
+	// cudaSetDevice(0);
+
 	sizeScene = scene.size();
 	sizeTarget = target.size();
 	numObjects = sizeScene + sizeTarget;
@@ -165,10 +146,10 @@ void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4>	ta
 	for (int i = 0; i < sizeScene; i++)
 		checksum += scene[i].w;
 
-	KDTree::Node *kd = new KDTree::Node[sizeScene];
-	KDTree::Create(scene, kd);
+	// KDTree::Node *kd = new KDTree::Node[sizeScene];
+	// KDTree::Create(scene, kd);
 
-	cudaMemcpy(dev_kd, kd, sizeScene*sizeof(KDTree::Node), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(dev_kd, kd, sizeScene*sizeof(KDTree::Node), cudaMemcpyHostToDevice, cudaStreamPerThread);
 
 	int testsum = 0;
 	for (int i = 0; i < sizeScene; i++) {
@@ -181,10 +162,10 @@ void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4>	ta
 	
 	// copy both scene and target to output points
 	// observed scene points
-	cudaMemcpy(dev_pos, &scene[0], scene.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(dev_pos, &scene[0], scene.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice, cudaStreamPerThread);
 	
 	// rendered points
-	cudaMemcpy(&dev_pos[scene.size()], &target[0], target.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(&dev_pos[scene.size()], &target[0], target.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice, cudaStreamPerThread);
 
 #if INITIAL_ROT
 	//add rotation and translation to target for test;
@@ -207,7 +188,7 @@ void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4>	ta
 	host_pos = (glm::vec4*) malloc(numObjects * sizeof(glm::vec4));
 	host_pair = (int*)malloc(target.size() * sizeof(int));
 
-	cudaMemcpy(host_pos, dev_pos, numObjects * sizeof(glm::vec4), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(host_pos, dev_pos, numObjects * sizeof(glm::vec4), cudaMemcpyDeviceToHost, cudaStreamPerThread);
 	// cudaStreamSynchronize(cudaStreamPerThread);
 	cudaStreamSynchronize(cudaStreamPerThread);
 }
@@ -221,6 +202,7 @@ void ICP::endSimulation() {
 
 	free(host_pos);
 	free(host_pair);
+	cudaStreamDestroy(cudaStreamPerThread);
 }
 
 /******************
@@ -470,7 +452,7 @@ void ICP::stepCPU() {
 		host_pos[i + sizeScene] = glm::vec4(R*glm::vec3(host_pos[i + sizeScene]) + t, host_pos[i + sizeScene].w);
 	}
 
-	cudaMemcpy(&dev_pos[sizeScene], &host_pos[sizeScene], sizeTarget * sizeof(glm::vec4), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(&dev_pos[sizeScene], &host_pos[sizeScene], sizeTarget * sizeof(glm::vec4), cudaMemcpyHostToDevice, cudaStreamPerThread);
 }
 
 /**
@@ -542,15 +524,15 @@ void ICP::stepGPU(glm::mat4& total_transform) {
 	printf("Target mean (x,y,z) : %f,%f,%f\n", mu_tar.x, mu_tar.y, mu_tar.z);
 	printf("Corr mean (x,y,z) : %f,%f,%f\n", mu_cor.x, mu_cor.y, mu_cor.z);
 
-	cudaMemcpy(tar_c, &dev_pos[sizeScene], sizeTarget*sizeof(glm::vec4), cudaMemcpyDeviceToDevice);
-	cudaMemcpy(cor_c, dev_cor, sizeTarget*sizeof(glm::vec4), cudaMemcpyDeviceToDevice);
+	cudaMemcpyAsync(tar_c, &dev_pos[sizeScene], sizeTarget*sizeof(glm::vec4), cudaMemcpyDeviceToDevice, cudaStreamPerThread);
+	cudaMemcpyAsync(cor_c, dev_cor, sizeTarget*sizeof(glm::vec4), cudaMemcpyDeviceToDevice, cudaStreamPerThread);
 	cudaStreamSynchronize(cudaStreamPerThread);
 	
 	glm::vec3 r(0, 0, 0);
 	glm::vec3 s(1, 1, 1);
 	glm::mat4 center_tar = utilityCore::buildTransformationMatrix(-mu_tar, r, s);
 	glm::mat4 center_cor = utilityCore::buildTransformationMatrix(-mu_cor, r, s);
-
+	// utilityCore::printMat4(center_tar);
 	transformPoint << <fullBlocksPerGrid, blockSize >> >(sizeTarget, tar_c, center_tar);
 	checkCUDAErrorWithLine("mean centered transformation 1 failed!");
 	cudaStreamSynchronize(cudaStreamPerThread);
@@ -562,7 +544,7 @@ void ICP::stepGPU(glm::mat4& total_transform) {
 	euclideanError << <fullBlocksPerGrid, blockSize >> >(sizeTarget, tar_c, cor_c, euclidean_error);
 	thrust::device_ptr<float> ptr_error(euclidean_error);
 
-	float total_error = thrust::reduce(ptr_error, ptr_error + sizeTarget, (float) 0.0, thrust::plus<float>());
+	float total_error = thrust::reduce(thrust::cuda::par.on(cudaStreamPerThread), ptr_error, ptr_error + sizeTarget, (float) 0.0, thrust::plus<float>());
 	// for (int i = 0; i < sizeTarget; i++)
 	// {
 	// 	printf("Dist:%f\n", euclidean_error[i]);
@@ -575,7 +557,7 @@ void ICP::stepGPU(glm::mat4& total_transform) {
 
 	outerProduct << <fullBlocksPerGrid, blockSize >> >(sizeTarget, tar_c, cor_c, dev_W);
 	thrust::device_ptr<glm::mat3> ptr_W(dev_W);
-	glm::mat3 W = thrust::reduce(ptr_W, ptr_W + sizeTarget, glm::mat3(0));
+	glm::mat3 W = thrust::reduce(thrust::cuda::par.on(cudaStreamPerThread), ptr_W, ptr_W + sizeTarget, glm::mat3(0));
 
 	checkCUDAErrorWithLine("outer product failed!");
 	cudaStreamSynchronize(cudaStreamPerThread);

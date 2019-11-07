@@ -12,6 +12,7 @@
 #include "pointcloud.h"
 #include "utilityCore.hpp"
 #include "main.hpp"
+#include "kdtree.hpp"
 
 // ================
 // Configuration
@@ -33,7 +34,7 @@
 int N_FOR_VIS;
 const Pointcloud *scene = NULL;
 Pointcloud *target = NULL;
-// std::vector<Pointcloud*> targets;
+std::vector<Pointcloud*> targets;
 /**
 * C main function.
 */
@@ -46,26 +47,35 @@ int main(int argc, char* argv[]) {
 
 	// Load scene file
 	scene = new Pointcloud(sceneFile);
-
+	int sizeScene = scene->points.size();
+	KDTree::Node *kd = new KDTree::Node[sizeScene];
+	KDTree::Create(scene->points, kd);
+	for (int i = 0; i < 30; i++)
+	{
+		string file_name = "./scenes/rendered_" + to_string(i) + ".txt";
+		Pointcloud* new_target = new Pointcloud(file_name);
+		targets.push_back(new_target);
+	}
 	if (true)
 	{
 		auto start = std::chrono::high_resolution_clock::now();
-		target = new Pointcloud(targetFile);
+		// target = new Pointcloud(targetFile);
 		// ICP::initSimulation(scene->points, target->points);
-		// #pragma omp parallel for   
-		for (int i = 0; i < 5; i++)
-		// int i = 0;
 		// #pragma omp parallel num_threads(30)
+		#pragma omp parallel for   
+		for (int i = 0; i < 30; i++)
 		{
 			// int i =  omp_get_thread_num();
-			string file_name = "./scenes/rendered_" + to_string(i) + ".txt";
-			Pointcloud* new_target = new Pointcloud(file_name);
+			// string file_name = "./scenes/rendered_" + to_string(i) + ".txt";
+			// Pointcloud* new_target = new Pointcloud(file_name);
 			// ICP::initSimulation(scene->points, new_target->points);
-			ICP::initSimulation(scene->points, new_target->points);
-			ICP::iterateGPU();
-			ICP::endSimulation();
-			
+			ICP* icp = new ICP();
+			// icp->initSimulation(scene->points, new_target->points, kd);
+			icp->initSimulation(scene->points, targets[i]->points, kd);
+			icp->iterateGPU();
+			free(icp);
 		}
+		// icp->endSimulation();
 		auto finish = std::chrono::high_resolution_clock::now();
 		std::cout << "All ICP took "
 				<< std::chrono::duration_cast<milli>(finish - start).count()
@@ -77,7 +87,7 @@ int main(int argc, char* argv[]) {
 		target = new Pointcloud(targetFile);
 		if (init(argc, argv)) {
 			mainLoop();
-			ICP::endSimulation();
+			// ICP::endSimulation();
 			return 0;
 		} else {
 			return 1;
@@ -161,8 +171,8 @@ bool init(int argc, char **argv) {
   cudaGLRegisterBufferObject(boidVBO_velocities);
   
   // Initialize N-body simulation
-  ICP::unitTest();
-  ICP::initSimulation(scene->points, target->points);
+//   ICP::unitTest();
+//   ICP::initSimulation(scene->points, target->points);
 
   updateCamera();
 
@@ -256,7 +266,7 @@ bool runCUDA() {
 	// ICP::stepGPU();
 	#pragma omp parallel num_threads(1)
 	{
-		icp_done = ICP::iterateGPU();
+		// icp_done = ICP::iterateGPU();
 	}
 	// #else
 	// ICP::stepCPU();
@@ -264,7 +274,7 @@ bool runCUDA() {
 
 
 	#if VISUALIZE
-	ICP::copyPointsToVBO(dptrVertPositions, dptrVertVelocities);
+	// ICP::copyPointsToVBO(dptrVertPositions, dptrVertVelocities);
 	#endif
 
 	// unmap buffer object
