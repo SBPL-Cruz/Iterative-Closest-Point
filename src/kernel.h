@@ -9,6 +9,7 @@
 #include <cmath>
 #include <vector>
 #include <iostream>
+using milli = std::chrono::milliseconds;
 
 namespace ICP {
 	void initSimulation(std::vector<glm::vec4> scene, std::vector<glm::vec4> target);
@@ -16,7 +17,7 @@ namespace ICP {
 
 	// Base ICP implementation obtained from http://ais.informatik.uni-freiburg.de/teaching/ss12/robotics/slides/17-icp.pdf
 	void stepCPU();
-	void stepGPU();
+	void stepGPU(glm::mat4& total_transform);
 	void checkConvergence(int thresh);
     
 	void copyPointsToVBO(float *vbodptr_positions, float *vbodptr_velocities);

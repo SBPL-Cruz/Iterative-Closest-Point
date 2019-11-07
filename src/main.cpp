@@ -33,11 +33,12 @@
 int N_FOR_VIS;
 const Pointcloud *scene = NULL;
 Pointcloud *target = NULL;
-
+// std::vector<Pointcloud*> targets;
 /**
 * C main function.
 */
 int main(int argc, char* argv[]) {
+	using milli = std::chrono::milliseconds;
 	projectName = "CIS565: GPU Accelerated ICP";
 
 	const char *sceneFile = argv[1];
@@ -45,15 +46,45 @@ int main(int argc, char* argv[]) {
 
 	// Load scene file
 	scene = new Pointcloud(sceneFile);
-	target = new Pointcloud(targetFile);
 
-	if (init(argc, argv)) {
-		mainLoop();
-		ICP::endSimulation();
-		return 0;
-	} else {
+	if (true)
+	{
+		auto start = std::chrono::high_resolution_clock::now();
+		target = new Pointcloud(targetFile);
+		// ICP::initSimulation(scene->points, target->points);
+		// #pragma omp parallel for   
+		for (int i = 0; i < 5; i++)
+		// int i = 0;
+		// #pragma omp parallel num_threads(30)
+		{
+			// int i =  omp_get_thread_num();
+			string file_name = "./scenes/rendered_" + to_string(i) + ".txt";
+			Pointcloud* new_target = new Pointcloud(file_name);
+			// ICP::initSimulation(scene->points, new_target->points);
+			ICP::initSimulation(scene->points, new_target->points);
+			ICP::iterateGPU();
+			ICP::endSimulation();
+			
+		}
+		auto finish = std::chrono::high_resolution_clock::now();
+		std::cout << "All ICP took "
+				<< std::chrono::duration_cast<milli>(finish - start).count()
+				<< " milliseconds\n";
 		return 1;
 	}
+	else
+	{
+		target = new Pointcloud(targetFile);
+		if (init(argc, argv)) {
+			mainLoop();
+			ICP::endSimulation();
+			return 0;
+		} else {
+			return 1;
+		}
+	}
+	
+
 }
 
 //-------------------------------
@@ -223,7 +254,10 @@ bool runCUDA() {
 	// execute the kernel
 	// #if GPU_ENABLED
 	// ICP::stepGPU();
-	icp_done = ICP::iterateGPU();
+	#pragma omp parallel num_threads(1)
+	{
+		icp_done = ICP::iterateGPU();
+	}
 	// #else
 	// ICP::stepCPU();
 	// #endif
@@ -272,8 +306,8 @@ void mainLoop() {
 				frame = 0;
 		}
 
-		if (!icp_done)
-			icp_done = runCUDA();
+		// if (!icp_done)
+		icp_done = runCUDA();
 
 		std::ostringstream ss;
 		ss << "[";

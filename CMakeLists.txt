@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.0)
 project(cis565_ICP)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
+SET(CMAKE_CXX_FLAGS "-fopenmp -Wall -Wno-sign-compare $ENV{CXXFLAGS}")
 
 find_package(GLEW)
 
@@ -11,6 +12,8 @@ find_package(OpenGL)
 
 find_package(glfw3)
 
+find_package(OpenMP)
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 
 include_directories( ${GLFW3_INCLUDE_DIR} )
 #find_package(X11 REQUIRED)
@@ -63,7 +66,7 @@ find_package(Threads REQUIRED)
 set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-8.0)
 add_definitions(-DCUDA_ON)
 find_package(CUDA REQUIRED)
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11 -O3")
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11 -O3 --default-stream per-thread -Xcompiler -fopenmp")
 
 #set(CUDA_ATTACH_VS_BUILD_RULE_TO_CUDA_FILE ON)
 #set(CUDA_SEPARABLE_COMPILATION ON)
@@ -85,6 +88,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     ${GLEW_LIBRARIES} 
     ${GLUT_LIBRARIES} 
     ${OPENGL_LIBRARIES}
+    ${OpenMP_CXX_LIBRARIES}
     glfw
     )
 

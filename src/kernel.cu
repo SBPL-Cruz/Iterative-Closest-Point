@@ -180,11 +180,15 @@ void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4>	ta
 	assert(checksum == testsum);
 	
 	// copy both scene and target to output points
+	// observed scene points
 	cudaMemcpy(dev_pos, &scene[0], scene.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice);
+	
+	// rendered points
 	cudaMemcpy(&dev_pos[scene.size()], &target[0], target.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice);
 
 #if INITIAL_ROT
 	//add rotation and translation to target for test;
+	cout << "Applying random initial transformation\n";
 	glm::vec3 t(20, -22, 20);
 	glm::vec3 r(-.5, .6, .8);
 	glm::vec3 s(1, 1, 1);
@@ -197,13 +201,15 @@ void ICP::initSimulation(std::vector<glm::vec4>	scene, std::vector<glm::vec4>	ta
 	kernResetVec3Buffer << <dim3((target.size() + blockSize - 1) / blockSize), blockSize >> >(target.size(), &dev_color[scene.size()], glm::vec3(0, 1, 0));
 
 	
-	cudaThreadSynchronize();
+	// cudaStreamSynchronize(cudaStreamPerThread);
+	cudaStreamSynchronize(cudaStreamPerThread);
 
 	host_pos = (glm::vec4*) malloc(numObjects * sizeof(glm::vec4));
 	host_pair = (int*)malloc(target.size() * sizeof(int));
 
 	cudaMemcpy(host_pos, dev_pos, numObjects * sizeof(glm::vec4), cudaMemcpyDeviceToHost);
-	cudaThreadSynchronize();
+	// cudaStreamSynchronize(cudaStreamPerThread);
+	cudaStreamSynchronize(cudaStreamPerThread);
 }
 
 void ICP::endSimulation() {
@@ -265,7 +271,8 @@ void ICP::copyPointsToVBO(float *vbodptr_positions, float *vbodptr_velocities) {
 
   checkCUDAErrorWithLine("copyBoidsToVBO color failed!");
 
-  cudaThreadSynchronize();
+  cudaStreamSynchronize(cudaStreamPerThread);
+  
 }
 
 
@@ -370,7 +377,19 @@ __global__ void outerProduct(int N, const glm::vec4 *vec1, const glm::vec4 *vec2
 
 	out[i] = glm::mat3(	glm::vec3(vec1[i]) * vec2[i].x, 
 						glm::vec3(vec1[i]) * vec2[i].y, 
-						glm::vec3(vec1[i] * vec2[i].z));
+						glm::vec3(vec1[i]) * vec2[i].z);
+}
+
+__global__ void euclideanError(int N, const glm::vec4 *vec1, const glm::vec4 *vec2, float *out)
+{
+	int i = threadIdx.x + (blockIdx.x * blockDim.x);
+	if (i >= N) {
+		return;
+	}
+
+	out[i] = sqrt((vec1[i].x - vec2[i].x) * (vec1[i].x - vec2[i].x) + 
+			(vec1[i].y - vec2[i].y) * (vec1[i].y - vec2[i].y) +
+			(vec1[i].z - vec2[i].z) * (vec1[i].z - vec2[i].z));
 }
 
 
@@ -458,26 +477,44 @@ void ICP::stepCPU() {
 * Step the ICP algorithm.
 */
 bool ICP::iterateGPU() {
-	int max_iter = 10;
+	int max_iter = 25;
 	int iter = 0;
+	auto start = std::chrono::high_resolution_clock::now();
+
+	glm::vec3 t(0, 0, 0);
+	glm::vec3 r(0, 0, 0);
+	glm::vec3 s(1, 1, 1);
+	glm::mat4 total_transform = utilityCore::buildTransformationMatrix(t, r, s);
+
+	// glm::mat4 total_transform = glm::mat4( 1.0 );
+
 	while (iter < max_iter)
 	{
 		printf("Iteration:%d\n", iter);
-		stepGPU();
+		stepGPU(total_transform);
 		iter++;
 	}
+	printf("Final Transform : \n");
+	// total_transform = glm::inverse(total_transform);
+	utilityCore::printMat4(total_transform);
+	auto finish = std::chrono::high_resolution_clock::now();
+    std::cout << "iterateGPU() took "
+              << std::chrono::duration_cast<milli>(finish - start).count()
+              << " milliseconds\n";
 	return true;
 }
-void ICP::stepGPU() {
+void ICP::stepGPU(glm::mat4& total_transform) {
 	dim3 fullBlocksPerGrid((sizeTarget + blockSize - 1) / blockSize);
 	// find the closest point in the scene for each point in the target
 
 	glm::vec4 *dev_cor, *tar_c, *cor_c;
 	glm::mat3 *dev_W;
+	float *euclidean_error;
 	cudaMalloc((void**)&dev_cor, sizeTarget*sizeof(glm::vec4));
 	cudaMalloc((void**)&tar_c, sizeTarget*sizeof(glm::vec4));
 	cudaMalloc((void**)&cor_c, sizeTarget*sizeof(glm::vec4));
 	cudaMalloc((void**)&dev_W, sizeTarget * sizeof(glm::mat3));
+	cudaMalloc((void**)&euclidean_error, sizeTarget * sizeof(float));
 	cudaMemset(dev_W, 0, sizeTarget * sizeof(glm::mat3));
 
 #if KD_TREE_SEARCH
@@ -485,7 +522,8 @@ void ICP::stepGPU() {
 #else
 	findCorrespondence << <fullBlocksPerGrid, blockSize >> >(sizeTarget, sizeScene, dev_cor, dev_pos);
 #endif
-	cudaThreadSynchronize();
+	cudaStreamSynchronize(cudaStreamPerThread);
+	// dev_cor contains correspondences of rendered points in observed cloud
 
 	// Calculate mean centered correspondenses 
 	glm::vec3 mu_tar(0, 0, 0), mu_cor(0, 0, 0);
@@ -495,25 +533,43 @@ void ICP::stepGPU() {
 	thrust::device_ptr<glm::vec4> ptr_scene(dev_pos);
 	thrust::device_ptr<glm::vec4> ptr_cor(dev_cor);
 
-	mu_tar = glm::vec3(thrust::reduce(ptr_target, ptr_target + sizeTarget, glm::vec4(0, 0, 0, 0)));
-	mu_cor = glm::vec3(thrust::reduce(ptr_cor, ptr_cor + sizeTarget, glm::vec4(0, 0, 0, 0)));
-
+	mu_tar = glm::vec3(thrust::reduce(thrust::cuda::par.on(cudaStreamPerThread), ptr_target, ptr_target + sizeTarget, glm::vec4(0, 0, 0, 0)));
+	mu_cor = glm::vec3(thrust::reduce(thrust::cuda::par.on(cudaStreamPerThread), ptr_cor, ptr_cor + sizeTarget, glm::vec4(0, 0, 0, 0)));
+	// get mean
 	mu_tar /= sizeTarget;
 	mu_cor /= sizeTarget;
+	// utilityCore::printVec3(mu_tar);
+	printf("Target mean (x,y,z) : %f,%f,%f\n", mu_tar.x, mu_tar.y, mu_tar.z);
+	printf("Corr mean (x,y,z) : %f,%f,%f\n", mu_cor.x, mu_cor.y, mu_cor.z);
 
 	cudaMemcpy(tar_c, &dev_pos[sizeScene], sizeTarget*sizeof(glm::vec4), cudaMemcpyDeviceToDevice);
 	cudaMemcpy(cor_c, dev_cor, sizeTarget*sizeof(glm::vec4), cudaMemcpyDeviceToDevice);
-
+	cudaStreamSynchronize(cudaStreamPerThread);
+	
 	glm::vec3 r(0, 0, 0);
 	glm::vec3 s(1, 1, 1);
 	glm::mat4 center_tar = utilityCore::buildTransformationMatrix(-mu_tar, r, s);
 	glm::mat4 center_cor = utilityCore::buildTransformationMatrix(-mu_cor, r, s);
 
 	transformPoint << <fullBlocksPerGrid, blockSize >> >(sizeTarget, tar_c, center_tar);
-	transformPoint << <fullBlocksPerGrid, blockSize >> >(sizeTarget, cor_c, center_cor);
+	checkCUDAErrorWithLine("mean centered transformation 1 failed!");
+	cudaStreamSynchronize(cudaStreamPerThread);
 
-	checkCUDAErrorWithLine("mean centered transformation failed!");
-	cudaThreadSynchronize();
+	transformPoint << <fullBlocksPerGrid, blockSize >> >(sizeTarget, cor_c, center_cor);
+	checkCUDAErrorWithLine("mean centered transformation 2 failed!");
+	cudaStreamSynchronize(cudaStreamPerThread);
+
+	euclideanError << <fullBlocksPerGrid, blockSize >> >(sizeTarget, tar_c, cor_c, euclidean_error);
+	thrust::device_ptr<float> ptr_error(euclidean_error);
+
+	float total_error = thrust::reduce(ptr_error, ptr_error + sizeTarget, (float) 0.0, thrust::plus<float>());
+	// for (int i = 0; i < sizeTarget; i++)
+	// {
+	// 	printf("Dist:%f\n", euclidean_error[i]);
+	// }
+	printf("Euclidean Error:%f\n", total_error);
+	checkCUDAErrorWithLine("euclideanError failed!");
+	cudaStreamSynchronize(cudaStreamPerThread);
 
 	// Calculate W
 
@@ -522,7 +578,7 @@ void ICP::stepGPU() {
 	glm::mat3 W = thrust::reduce(ptr_W, ptr_W + sizeTarget, glm::mat3(0));
 
 	checkCUDAErrorWithLine("outer product failed!");
-	cudaThreadSynchronize();
+	cudaStreamSynchronize(cudaStreamPerThread);
 
 	// calculate SVD of W
 	glm::mat3 U, S, V;
@@ -544,6 +600,13 @@ void ICP::stepGPU() {
 	// update target points
 	glm::mat4 transform = glm::translate(glm::mat4(), t) * glm::mat4(R);
 	transformPoint << <fullBlocksPerGrid, blockSize >> >(sizeTarget, &dev_pos[sizeScene], transform);
+	// total_transform *= transform;
+	total_transform = transform * total_transform;
+	checkCUDAErrorWithLine("transform failed!");
+	cudaStreamSynchronize(cudaStreamPerThread);
+	
+	// utilityCore::printMat4(transform);
+
 
 	// std::cout << glm::to_string(transform) << std::endl;
 	// int i,j;
