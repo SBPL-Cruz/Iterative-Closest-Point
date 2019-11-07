@@ -35,6 +35,8 @@ int N_FOR_VIS;
 const Pointcloud *scene = NULL;
 Pointcloud *target = NULL;
 std::vector<Pointcloud*> targets;
+ICP* icp = NULL;
+KDTree::Node *kd = NULL;
 /**
 * C main function.
 */
@@ -48,16 +50,17 @@ int main(int argc, char* argv[]) {
 	// Load scene file
 	scene = new Pointcloud(sceneFile);
 	int sizeScene = scene->points.size();
-	KDTree::Node *kd = new KDTree::Node[sizeScene];
+	kd = new KDTree::Node[sizeScene];
 	KDTree::Create(scene->points, kd);
-	for (int i = 0; i < 30; i++)
+	
+	if (false)
 	{
-		string file_name = "./scenes/rendered_" + to_string(i) + ".txt";
-		Pointcloud* new_target = new Pointcloud(file_name);
-		targets.push_back(new_target);
-	}
-	if (true)
-	{
+		for (int i = 0; i < 30; i++)
+		{
+			string file_name = "./scenes/rendered_" + to_string(i) + ".txt";
+			Pointcloud* new_target = new Pointcloud(file_name);
+			targets.push_back(new_target);
+		}
 		auto start = std::chrono::high_resolution_clock::now();
 		// target = new Pointcloud(targetFile);
 		// ICP::initSimulation(scene->points, target->points);
@@ -84,10 +87,12 @@ int main(int argc, char* argv[]) {
 	}
 	else
 	{
+		icp = new ICP();
 		target = new Pointcloud(targetFile);
+		// icp->initSimulation(scene->points, target->points, kd);
 		if (init(argc, argv)) {
 			mainLoop();
-			// ICP::endSimulation();
+			// icp->endSimulation();
 			return 0;
 		} else {
 			return 1;
@@ -264,17 +269,19 @@ bool runCUDA() {
 	// execute the kernel
 	// #if GPU_ENABLED
 	// ICP::stepGPU();
-	#pragma omp parallel num_threads(1)
-	{
-		// icp_done = ICP::iterateGPU();
-	}
+	// #pragma omp parallel num_threads(1)
+	// {
+	// 	// icp_done = ICP::iterateGPU();
+	// }
 	// #else
 	// ICP::stepCPU();
 	// #endif
-
+	icp->initSimulation(scene->points, target->points, kd);
+	icp_done = icp->iterateGPU();
 
 	#if VISUALIZE
-	// ICP::copyPointsToVBO(dptrVertPositions, dptrVertVelocities);
+		// ICP::copyPointsToVBO(dptrVertPositions, dptrVertVelocities);
+		icp->copyPointsToVBO(dptrVertPositions, dptrVertVelocities);
 	#endif
 
 	// unmap buffer object
