@@ -9,9 +9,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include "utilityCore.hpp"
-#include "svd3.h"
-#include "kernel.h"
+#include "cuda_icp_custom/utilityCore.hpp"
+#include "cuda_icp_custom/svd3.h"
+#include "cuda_icp_custom/kernel.h"
 #include "device_launch_parameters.h"
 
 

@@ -11,7 +11,7 @@
 #include <locale>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
-#include "utilityCore.hpp"
+#include "cuda_icp_custom/utilityCore.hpp"
 
 struct csv_reader : std::ctype<char> {
 	csv_reader() : std::ctype<char>(get_table()) {}

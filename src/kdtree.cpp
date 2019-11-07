@@ -7,7 +7,7 @@
  */
 
 #include <algorithm>
-#include "kdtree.hpp"
+#include "cuda_icp_custom/kdtree.hpp"
 
 bool sortX(const glm::vec4 &p1, const glm::vec4 &p2)
 {

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(cis565_ICP)
+project(cuda_icp_custom)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 set(CMAKE_CXX_STANDARD 14)
@@ -16,7 +16,9 @@ find_package(OpenMP)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 
 include_directories( ${GLFW3_INCLUDE_DIR} )
-#find_package(X11 REQUIRED)
+
+include_directories( include )
+
 
 FIND_PATH( GLEW_INCLUDE_PATH GL/glew.h
            /usr/include
@@ -68,28 +70,20 @@ add_definitions(-DCUDA_ON)
 find_package(CUDA REQUIRED)
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11 -O3 --default-stream per-thread -Xcompiler -fopenmp")
 
-#set(CUDA_ATTACH_VS_BUILD_RULE_TO_CUDA_FILE ON)
-#set(CUDA_SEPARABLE_COMPILATION ON)
-
-#if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-#    set(CUDA_PROPAGATE_HOST_FLAGS OFF)
-#endif()
-
-#add_subdirectory(src)
 
 set(SOURCE_FILES
-    "src/cudaMat4.hpp"
-    "src/glslUtility.hpp"
+    "include/cuda_icp_custom/glslUtility.hpp"
+    "include/cuda_icp_custom/utilityCore.hpp"
+    "include/cuda_icp_custom/kernel.h"
+    "include/cuda_icp_custom/pointcloud.h"
+    "include/cuda_icp_custom/kdtree.hpp"
+    "include/cuda_icp_custom/svd3.h"
+    "include/cuda_icp_custom/cudaMat4.hpp"
     "src/glslUtility.cpp"
-    "src/utilityCore.hpp"
     "src/utilityCore.cpp"
-    "src/kernel.h"
     "src/kernel.cu"
-    "src/pointcloud.h"
     "src/pointcloud.cpp"
-    "src/svd3.h"
     "src/kdtree.cpp"
-    "src/kdtree.hpp"
     )
 
 cuda_add_library(src
@@ -98,7 +92,7 @@ cuda_add_library(src
     )
 
 cuda_add_executable(${CMAKE_PROJECT_NAME}
-    "src/main.hpp"
+    "include/cuda_icp_custom/main.hpp"
     "src/main.cpp"
     )
 
@@ -111,11 +105,3 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     ${OpenMP_CXX_LIBRARIES}
     glfw
     )
-
-#add_custom_command(
-#    TARGET ${CMAKE_PROJECT_NAME}
-#    PRE_BUILD
-#    COMMAND ${CMAKE_COMMAND} -E copy_directory
-#        ${CMAKE_SOURCE_DIR}/shaders
-#        ${CMAKE_BINARY_DIR}/shaders
-#    )

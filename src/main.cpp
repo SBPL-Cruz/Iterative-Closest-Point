@@ -9,10 +9,10 @@
 #include <chrono>
 #include <thread>
 
-#include "pointcloud.h"
-#include "utilityCore.hpp"
-#include "main.hpp"
-#include "kdtree.hpp"
+#include "cuda_icp_custom/pointcloud.h"
+#include "cuda_icp_custom/utilityCore.hpp"
+#include "cuda_icp_custom/main.hpp"
+#include "cuda_icp_custom/kdtree.hpp"
 
 // ================
 // Configuration

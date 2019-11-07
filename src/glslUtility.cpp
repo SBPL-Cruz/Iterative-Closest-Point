@@ -12,7 +12,7 @@
 #include <string>
 #include <cstdlib>
 #include <cstring>
-#include "glslUtility.hpp"
+#include "cuda_icp_custom/glslUtility.hpp"
 
 using std::ios;
 
