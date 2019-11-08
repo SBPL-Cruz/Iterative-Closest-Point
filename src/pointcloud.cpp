@@ -3,8 +3,9 @@
 #include <cstring>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include "cuda_icp_custom/utilityCore.hpp"
 
-Pointcloud::Pointcloud(string filename) {
+PointcloudICP::PointcloudICP(string filename) {
     cout << "Reading scene from " << filename << " ..." << endl;
     cout << " " << endl;
     char* fname = (char*)filename.c_str();
@@ -25,5 +26,17 @@ Pointcloud::Pointcloud(string filename) {
             // cout << glm::to_string(pt) << endl;
 			points.push_back(pt);
         }
+    }
+}
+
+PointcloudICP::PointcloudICP(float* input_points, int num_points, int step_size) {
+    for (int cloud_index = 0; cloud_index < num_points; cloud_index++)
+    {
+        float x = input_points[cloud_index + 0*step_size];
+        float y = input_points[cloud_index + 1*step_size];
+        float z = input_points[cloud_index + 2*step_size];
+        glm::vec4 pt(x, y, z, cloud_index);
+        // cout << glm::to_string(pt) << endl;
+        points.push_back(pt);
     }
 }

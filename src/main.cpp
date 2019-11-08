@@ -32,9 +32,9 @@
 
 // LOOK-1.2 - change this to adjust particle count in the simulation
 int N_FOR_VIS;
-const Pointcloud *scene = NULL;
-Pointcloud *target = NULL;
-std::vector<Pointcloud*> targets;
+const PointcloudICP *scene = NULL;
+PointcloudICP *target = NULL;
+std::vector<PointcloudICP*> targets;
 ICP* icp = NULL;
 KDTree::Node *kd = NULL;
 /**
@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
 	const char *targetFile = argv[2];
 
 	// Load scene file
-	scene = new Pointcloud(sceneFile);
+	scene = new PointcloudICP(sceneFile);
 	int sizeScene = scene->points.size();
 	kd = new KDTree::Node[sizeScene];
 	KDTree::Create(scene->points, kd);
@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
 		for (int i = 0; i < 30; i++)
 		{
 			string file_name = "./scenes/rendered_" + to_string(i) + ".txt";
-			Pointcloud* new_target = new Pointcloud(file_name);
+			PointcloudICP* new_target = new PointcloudICP(file_name);
 			targets.push_back(new_target);
 		}
 		auto start = std::chrono::high_resolution_clock::now();
@@ -88,7 +88,7 @@ int main(int argc, char* argv[]) {
 	else
 	{
 		icp = new ICP();
-		target = new Pointcloud(targetFile);
+		target = new PointcloudICP(targetFile);
 		// icp->initSimulation(scene->points, target->points, kd);
 		if (init(argc, argv)) {
 			mainLoop();

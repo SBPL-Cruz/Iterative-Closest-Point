@@ -117,6 +117,73 @@ __global__ void kernResetIntBuffer(int N, int *intBuffer, int value) {
 
 ICP::ICP() {}
 
+ICP::ICP(float* scene_cloud, 
+				int num_scene_points, 
+				float* target_cloud, 
+				int num_target_points,
+				int total_target_points)
+{
+	cudaFree(0);
+
+	PointcloudICP *scene_oc = new PointcloudICP(scene_cloud, num_scene_points, num_scene_points);
+	sizeScene = scene_oc->points.size();
+	printf("Number of scene points : %d\n", sizeScene);
+	KDTree::Node *kd = new KDTree::Node[sizeScene];
+	KDTree::Create(scene_oc->points, kd);
+	auto &scene = scene_oc->points;
+
+	PointcloudICP *target_oc = new PointcloudICP(target_cloud, num_target_points, total_target_points);
+	sizeTarget = target_oc->points.size();
+	printf("Number of target points : %d\n", sizeTarget);
+	auto &target = target_oc->points;
+
+	// this->initSimulation(scene->points, target->points, kd);
+	numObjects = sizeScene + sizeTarget;
+
+	cudaMalloc((void**)&dev_pos, numObjects * sizeof(glm::vec4));
+	checkCUDAErrorWithLine("cudaMalloc dev_pos failed!");
+	printf("cudaMallocs1 done\n");
+
+	cudaMalloc((void**)&dev_dist, sizeTarget * sizeof(int));
+	checkCUDAErrorWithLine("cudaMalloc dev_dist failed!");
+	printf("cudaMallocs3 done\n");
+
+	cudaMalloc((void**)&dev_kd, sizeScene * sizeof(KDTree::Node));
+	checkCUDAErrorWithLine("cudaMalloc dev_kd failed!");
+	printf("cudaMallocs5 done\n");
+
+	int checksum = 0;
+	for (int i = 0; i < sizeScene; i++)
+		checksum += scene[i].w;
+
+	cudaMemcpyAsync(dev_kd, kd, sizeScene*sizeof(KDTree::Node), cudaMemcpyHostToDevice, cudaStreamPerThread);
+
+	int testsum = 0;
+	for (int i = 0; i < sizeScene; i++) {
+		testsum += kd[i].value.w;
+	}
+	printf("kd size: %i\n", sizeScene*sizeof(KDTree::Node));
+
+	//verify all items are in the kd tree
+	assert(checksum == testsum);
+	
+	// copy both scene and target to output points
+	// observed scene points
+	cudaMemcpyAsync(dev_pos, &scene[0], scene.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice, cudaStreamPerThread);
+	
+	// rendered points
+	cudaMemcpyAsync(&dev_pos[scene.size()], &target[0], target.size()*sizeof(glm::vec4), cudaMemcpyHostToDevice, cudaStreamPerThread);
+
+	// cudaStreamSynchronize(cudaStreamPerThread);
+	cudaStreamSynchronize(cudaStreamPerThread);
+
+	host_pos = (glm::vec4*) malloc(numObjects * sizeof(glm::vec4));
+
+	cudaMemcpyAsync(host_pos, dev_pos, numObjects * sizeof(glm::vec4), cudaMemcpyDeviceToHost, cudaStreamPerThread);
+	// cudaStreamSynchronize(cudaStreamPerThread);
+	cudaStreamSynchronize(cudaStreamPerThread);
+
+}
 /**
 * Initialize memory, update some globals
 */
@@ -202,7 +269,7 @@ void ICP::endSimulation() {
 
 	free(host_pos);
 	free(host_pair);
-	cudaStreamDestroy(cudaStreamPerThread);
+	// cudaStreamDestroy(cudaStreamPerThread);
 }
 
 /******************
@@ -458,7 +525,8 @@ void ICP::stepCPU() {
 /**
 * Step the ICP algorithm.
 */
-bool ICP::iterateGPU() {
+bool ICP::iterateGPU(float* result_observed_cloud) {
+	using milli = std::chrono::milliseconds;
 	int max_iter = 25;
 	int iter = 0;
 	auto start = std::chrono::high_resolution_clock::now();
@@ -479,6 +547,10 @@ bool ICP::iterateGPU() {
 	printf("Final Transform : \n");
 	// total_transform = glm::inverse(total_transform);
 	utilityCore::printMat4(total_transform);
+
+
+	cudaMemcpyAsync(host_pos, &dev_pos[sizeScene], sizeTarget * sizeof(glm::vec4), cudaMemcpyDeviceToHost, cudaStreamPerThread);
+	utilityCore::convertVec4ToFloat(host_pos, result_observed_cloud, sizeTarget, sizeTarget);
 	auto finish = std::chrono::high_resolution_clock::now();
     std::cout << "iterateGPU() took "
               << std::chrono::duration_cast<milli>(finish - start).count()

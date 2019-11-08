@@ -175,3 +175,16 @@ void utilityCore::printVec4(const glm::vec4 &m) {
 void utilityCore::printVec3(const glm::vec3 &m) {
     std::cout << m[0] << " " << m[1] << " " << m[2] << std::endl;
 }
+
+void utilityCore::convertVec4ToFloat(const glm::vec4* m, float* cloud, int step_size, int num_points) {
+    for (int i = 0; i < num_points; i++)
+    {
+        utilityCore::printVec4(m[i]);
+        float x = m[i].x;
+        float y = m[i].y;
+        float z = m[i].z;
+        cloud[i + 0*step_size] = x;
+        cloud[i + 1*step_size] = y;
+        cloud[i + 2*step_size] = z;
+    }
+}

@@ -2,13 +2,14 @@ cmake_minimum_required(VERSION 3.0)
 
 project(cuda_icp_custom)
 
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
+#set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 set(CMAKE_CXX_STANDARD 14)
-SET(CMAKE_CXX_FLAGS "-fopenmp -Wall -Wno-sign-compare $ENV{CXXFLAGS}")
+SET(CMAKE_CXX_FLAGS "-fopenmp -Wall -fPIC -Wno-sign-compare $ENV{CXXFLAGS}")
 
 find_package(GLEW)
 
 find_package(OpenGL)
+include_directories( ${OPENGL_INCLUDE_DIR} )
 
 find_package(glfw3)
 
@@ -59,49 +60,75 @@ MESSAGE(STATUS "link dirs: ${LIB_DIRS}")
 MESSAGE(STATUS "link libs: ${LINK_LIBS}")
 
 
-# Enable CUDA debug info in debug mode builds
-list(APPEND CUDA_NVCC_FLAGS_DEBUG -G -g)
 
 # Crucial magic for CUDA linking
 find_package(Threads REQUIRED)
 
+
+find_package(catkin REQUIRED COMPONENTS roscpp)
+
+catkin_package(
+    INCLUDE_DIRS include
+    LIBRARIES ${PROJECT_NAME}
+)
+
+
+# Enable CUDA debug info in debug mode builds
+list(APPEND CUDA_NVCC_FLAGS_DEBUG -G -g)
 set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-8.0)
 add_definitions(-DCUDA_ON)
 find_package(CUDA REQUIRED)
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++11 -O3 --default-stream per-thread -Xcompiler -fopenmp")
+#include(${CUDA_INCLUDE_DIRS})
+
+#set(SOURCE_FILES
+#    "include/cuda_icp_custom/glslUtility.hpp"
+#    "include/cuda_icp_custom/utilityCore.hpp"
+#    "include/cuda_icp_custom/kernel.h"
+#    "include/cuda_icp_custom/pointcloud.h"
+#    "include/cuda_icp_custom/kdtree.hpp"
+#    "include/cuda_icp_custom/svd3.h"
+#    "include/cuda_icp_custom/cudaMat4.hpp"
+#    "src/glslUtility.cpp"
+#    "src/utilityCore.cpp"
+#    "src/kernel.cu"
+#    "src/pointcloud.cpp"
+#    "src/kdtree.cpp"
+#    )
+#
+#cuda_add_library(src
+#    ${SOURCE_FILES}
+#    OPTIONS -arch=sm_50
+#    )
+#
+#cuda_add_executable(${PROJECT_NAME}
+#    "include/cuda_icp_custom/main.hpp"
+#    "src/main.cpp"
+#    )
 
 
-set(SOURCE_FILES
-    "include/cuda_icp_custom/glslUtility.hpp"
-    "include/cuda_icp_custom/utilityCore.hpp"
-    "include/cuda_icp_custom/kernel.h"
-    "include/cuda_icp_custom/pointcloud.h"
-    "include/cuda_icp_custom/kdtree.hpp"
-    "include/cuda_icp_custom/svd3.h"
-    "include/cuda_icp_custom/cudaMat4.hpp"
-    "src/glslUtility.cpp"
-    "src/utilityCore.cpp"
-    "src/kernel.cu"
-    "src/pointcloud.cpp"
-    "src/kdtree.cpp"
-    )
+SET(icp_cuda_srcs  src/kernel.cu)
+SET(icp_srcs  src/kdtree.cpp src/pointcloud.cpp src/utilityCore.cpp src/glslUtility.cpp)
 
-cuda_add_library(src
-    ${SOURCE_FILES}
-    OPTIONS -arch=sm_50
-    )
+CUDA_COMPILE(icp_cuda_objs ${icp_cuda_srcs})
 
-cuda_add_executable(${CMAKE_PROJECT_NAME}
-    "include/cuda_icp_custom/main.hpp"
-    "src/main.cpp"
-    )
-
-target_link_libraries(${CMAKE_PROJECT_NAME}
-    src
-    #${CORELIBS}
+add_library(${PROJECT_NAME}
+            ${icp_srcs}
+            ${icp_cuda_srcs}
+            ${icp_cuda_objs} 
+)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CUDA_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME}
     ${GLEW_LIBRARIES} 
     ${GLUT_LIBRARIES} 
     ${OPENGL_LIBRARIES}
     ${OpenMP_CXX_LIBRARIES}
     glfw
+    ${catkin_LIBRARIES}
+    ${CUDA_LIBRARIES} 
+    ${CUDA_CUBLAS_LIBRARIES}
     )
+
+
+install(DIRECTORY include/${PROJECT_NAME}/
+        DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
